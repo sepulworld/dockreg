@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/coreos/go-etcd/etcd"
 	"log"
 	"os"
@@ -24,19 +25,17 @@ const loop = 3 * time.Second
 var hostname, _ = os.Hostname()
 var etcdCli *etcd.Client
 
-func reg(hostPort, hostIp string) {
-	_, err := etcdCli.Set("services/backend/"+hostname+"/port", hostPort, uint64(ttl))
-	if err != nil {
-		log.Println(err)
-	}
-	_, err = etcdCli.Set("services/backend/"+hostname+"/ip", hostIp, uint64(ttl))
+func reg(key, hostPort, hostIp string) {
+	//_, err := etcdCli.Set("services/backend/"+hostname, fmt.Sprintf("{\"host\":\"%v\", \"port\":%v}", hostIp, hostPort), uint64(ttl))
+	_, err := etcdCli.Set(fmt.Sprintf("%v/%v:%v", key, hostIp, hostPort), "running", uint64(ttl))
 	if err != nil {
 		log.Println(err)
 	}
 }
 
-func unreg() {
-	etcdCli.Delete("services/backend/"+hostname, true)
+func unreg(key, hostPort, hostIp string) {
+	//etcdCli.Delete("services/backend/"+hostname, true)
+	etcdCli.Delete(fmt.Sprintf("%v/%v:%v", key, hostIp, hostPort), true)
 }
 
 func healthCheck(localPort string) bool {
@@ -57,21 +56,31 @@ func healthCheck(localPort string) bool {
 }
 
 func main() {
-
+	// Parse command line arguments
 	pEtcdServer := flag.String("etcd", "", "etcd server for registration")
+	pEtcdKey := flag.String("key", "service", "etcd key for this service")
 	pLocalPort := flag.String("port", "", "Local port to listen to")
 	pDockerSock := flag.String("docker", "/var/run/docker.sock", "Unix socket to call Docker API")
+	pPublicIp := flag.String("ip", "", "Public IP for this service")
 	flag.Parse()
 
 	etcdServers := strings.Split(*pEtcdServer, ",")
 	hostname, _ = os.Hostname()
 
+	// Create a client for etcd
 	etcdCli = etcd.NewClient(etcdServers)
 
+	// Get container info through Docker API
 	port, _ := getPublicPort(*pDockerSock, hostname, *pLocalPort)
 
+	// If -ip argument is passed, use this IP address for registration, otherwise use docker mapped IP.
+	registerIp := port.HostIp
+	if len(*pPublicIp) > 0 {
+		registerIp = *pPublicIp
+	}
+
 	log.Printf("Starting register on %v, watching for local port %v...\n", hostname, *pLocalPort)
-	log.Printf("Local port %v is mapped to public port %v on host %v", *pLocalPort, port.HostPort, port.HostIp)
+	log.Printf("Local port %v is mapped to public port %v on host %v", *pLocalPort, port.HostPort, registerIp)
 
 	stop := make(chan os.Signal, 1)
 	ticker := time.NewTicker(loop)
@@ -79,20 +88,21 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
+		// At each tick, checks the health of the service and update etcd key
 		for {
 			<-ticker.C
 			if healthCheck(*pLocalPort) {
 				log.Println("Service is UP!")
-				reg(port.HostPort, port.HostIp)
+				reg(*pEtcdKey, port.HostPort, registerIp)
 			} else {
 				log.Println("Service is DOWN!")
-				unreg()
+				unreg(*pEtcdKey, port.HostPort, registerIp)
 			}
 		}
 	}()
 
 	<-stop
 	log.Println("Register stopped!")
-	unreg()
+	unreg(*pEtcdKey, port.HostPort, registerIp)
 	ticker.Stop()
 }
