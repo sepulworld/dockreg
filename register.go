@@ -12,21 +12,17 @@ import (
 	"time"
 )
 
-/*
- * TODO :
- *		-> re-use client
- */
-
-const ttl = 10
+const ttl = 20
 const dialTimeout = 3 * time.Second
 const rwTimeout = 3 * time.Second
-const loop = 3 * time.Second
+const loop = 5 * time.Second
 
 var hostname, _ = os.Hostname()
 var etcdCli *etcd.Client
+var httpCli = NewTimeoutClient(dialTimeout, rwTimeout)
+
 
 func reg(key, hostPort, hostIp string) {
-	//_, err := etcdCli.Set("services/backend/"+hostname, fmt.Sprintf("{\"host\":\"%v\", \"port\":%v}", hostIp, hostPort), uint64(ttl))
 	_, err := etcdCli.Set(fmt.Sprintf("%v/%v:%v", key, hostIp, hostPort), "running", uint64(ttl))
 	if err != nil {
 		log.Println(err)
@@ -34,13 +30,11 @@ func reg(key, hostPort, hostIp string) {
 }
 
 func unreg(key, hostPort, hostIp string) {
-	//etcdCli.Delete("services/backend/"+hostname, true)
 	etcdCli.Delete(fmt.Sprintf("%v/%v:%v", key, hostIp, hostPort), true)
 }
 
 func healthCheck(localPort string) bool {
-	client := NewTimeoutClient(dialTimeout, rwTimeout)
-	resp, err := client.Get("http://localhost:" + localPort)
+	resp, err := httpCli.Get("http://localhost:" + localPort)
 	if err != nil {
 		log.Printf("Cannot access to http://localhost:"+localPort+" : %v\n", err)
 		return false
