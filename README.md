@@ -15,6 +15,8 @@ This process will request an application listen on localhost every 5 seconds. If
 
 **\-\-port** : mandatory, local port of the application to register  
 
+**\-\-localhost** : optional, localhost interface to run tcp healthcheck against.  Defaults to 'localhost' of Docker instances. Use this flag is you want to set it to 127.0.0.1 for example. format: `--localhost 127.0.0.1`  
+
 **\-\-docker** : optional, path to the Docker UNIX socket to access the Docker API. Default value is `/var/run/docker.sock`.  
 
 **\-\-ip** : optional, IP address of the Docker host to put in etcd. If not specified, the IP will be retrieved from Docker API on port mapping (which means you must specify it in the docker run command, as `docker run -p 8000::192.168.1.54`)  

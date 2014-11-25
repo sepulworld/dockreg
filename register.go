@@ -33,10 +33,11 @@ func unreg(key, hostPort, hostIp string) {
 	etcdCli.Delete(fmt.Sprintf("%v/%v:%v", key, hostIp, hostPort), true)
 }
 
-func healthCheck(localPort string) bool {
-	resp, err := httpCli.Get("http://localhost:" + localPort)
+func healthCheck(localPort, localHosttoCheck string) bool {
+	hostCheck := fmt.Sprintf("http://%v:", localHosttoCheck)
+	resp, err := httpCli.Get(hostCheck + localPort)
 	if err != nil {
-		log.Printf("Cannot access to http://localhost:"+localPort+" : %v\n", err)
+		log.Printf("Cannot access to %v", hostCheck +localPort+" : %v\n", err)
 		return false
 	} else {
 		defer resp.Body.Close()
@@ -54,6 +55,7 @@ func main() {
 	pEtcdServer := flag.String("etcd", "", "etcd server for registration")
 	pEtcdKey := flag.String("key", "service", "etcd key for this service")
 	pLocalPort := flag.String("port", "", "Local port to listen to")
+	pLocalHosttoCheck := flag.String("localhost", "localhost", "Localhost Docker interface to run health check against")
 	pDockerSock := flag.String("docker", "/var/run/docker.sock", "Unix socket to call Docker API")
 	pPublicIp := flag.String("ip", "", "Public IP for this service")
 	flag.Parse()
@@ -85,7 +87,7 @@ func main() {
 		// At each tick, checks the health of the service and update etcd key
 		for {
 			<-ticker.C
-			if healthCheck(*pLocalPort) {
+			if healthCheck(*pLocalPort, *pLocalHosttoCheck) {
 				log.Println("Service is UP!")
 				reg(*pEtcdKey, port.HostPort, registerIp)
 			} else {
